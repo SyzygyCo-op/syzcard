@@ -1,14 +1,30 @@
 from flask import Flask, jsonify, request
 import vera
 import threading, time, json, os
+from apscheduler.schedulers.background import BackgroundScheduler
 import secrets
 
 DIRECTORY = os.path.dirname(os.path.realpath(__file__)) + '/'
 PERMISSION_FILE = DIRECTORY + 'permissions.json'
 app = Flask(__name__)
 ve = None
+unlocking = False
+
+def lock():
+    global unlocking
+    if unlocking:
+        return
+
+    global ve
+    if ve is None:
+        ve = vera.VeraRemote(secrets.VERA_USER, secrets.VERA_PASS, secrets.VERA_ID)
+    dev = ve.get_device('Entry Lock')
+    print('locking door')
+    dev.set_lock(True)
 
 def unlock():
+    global unlocking
+    unlocking = True
     global ve
     if ve is None:
         ve = vera.VeraRemote(secrets.VERA_USER, secrets.VERA_PASS, secrets.VERA_ID)
@@ -18,6 +34,7 @@ def unlock():
     time.sleep(10)
     print('locking door')
     dev.set_lock(True)
+    unlocking = False
 
 def add_permission(card, fn):
     permissions = {}
@@ -71,4 +88,7 @@ def check_permission(fn, key, card):
     return card in permissions[fn]
 
 if __name__ == '__main__':
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(lock, 'interval', minutes=1)
+    scheduler.start()
     app.run(port=6660)
